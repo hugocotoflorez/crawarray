@@ -2,6 +2,12 @@
 #include <stdio.h>
 #include <unistd.h>
 
+/* #include <ctype.h>
+ * isprint(int)
+ *
+ * If its printable print it into a string with the following printable characters*/
+
+
 #define BUF_SIZE (1024 * 1024)
 #define LINE_SIZE (80)
 #define TAB_SIZE (8)
