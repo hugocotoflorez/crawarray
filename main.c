@@ -1,11 +1,7 @@
+#include <ctype.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <unistd.h>
-
-/* #include <ctype.h>
- * isprint(int)
- *
- * If its printable print it into a string with the following printable characters*/
 
 
 #define BUF_SIZE (1024 * 1024)
@@ -42,6 +38,10 @@ main(int argc, char *argv[])
                 return 3;
         }
 
+        enum STATE {
+                NORMAL,
+                ON_STRING,
+        } state = NORMAL;
 
         int counter;
         counter = TAB_SIZE;
@@ -49,26 +49,60 @@ main(int argc, char *argv[])
         dprintf(fdout, "static signed char _data[] = {\n\t");
         while ((n = read(fdin, buffer, sizeof buffer)) > 0) {
                 for (offset = 0; offset < n; offset++) {
-                        switch (buffer[offset]) {
-                        case '\\':
-                        case 0 ... 29: // no printable chars
-                                counter += dprintf(fdout, "%d, ", buffer[offset]);
-                                break;
-                        case '\'':
-                                counter += dprintf(fdout, "'\%c', ", buffer[offset]);
-                                break;
-                        default:
-                                counter += dprintf(fdout, "'%c', ", buffer[offset]);
-                                break;
+                        if (isprint(buffer[offset])) {
+                                if (buffer[offset] == '"') {
+                                        if (state == NORMAL) {
+                                                counter += dprintf(fdout, "\"\\%c", buffer[offset]);
+                                                state = ON_STRING;
+                                        } else if (state == ON_STRING) {
+                                                counter += dprintf(fdout, "\\%c", buffer[offset]);
+                                        }
+                                        continue;
+                                }
+
+                                if (buffer[offset] == '\\') {
+                                        if (state == NORMAL) {
+                                                counter += dprintf(fdout, "\"\\%c", buffer[offset]);
+                                                state = ON_STRING;
+                                        } else if (state == ON_STRING) {
+                                                counter += dprintf(fdout, "\\%c", buffer[offset]);
+                                        }
+                                        continue;
+                                }
+
+                                if (state == NORMAL) {
+                                        counter += dprintf(fdout, "\"%c", buffer[offset]);
+                                        state = ON_STRING;
+                                } else if (state == ON_STRING) {
+                                        counter += dprintf(fdout, "%c", buffer[offset]);
+                                }
+                        }
+
+                        else {
+                                if (state == NORMAL) {
+                                        counter += dprintf(fdout, "\"\\x%02x", buffer[offset]);
+                                        state = ON_STRING;
+                                } else if (state == ON_STRING) {
+                                        counter += dprintf(fdout, "\\x%02x", buffer[offset]);
+                                }
                         }
 
                         if (counter >= LINE_SIZE) {
-                                dprintf(fdout, "\n\t");
+                                if (state == NORMAL)
+                                        dprintf(fdout, "\n\t");
+                                else if (state == ON_STRING) {
+                                        dprintf(fdout, "\"\n\t");
+                                        state = NORMAL;
+                                }
                                 counter = TAB_SIZE; /* TODO: now it assumes tabs are 8 width */
                         }
                 }
         }
-        dprintf(fdout, "\n};\n");
+
+        if (state == NORMAL)
+                dprintf(fdout, "\n};\n");
+        else if (state == ON_STRING)
+                dprintf(fdout, "\"\n};\n");
 
         close(fdin);
         close(fdout);
