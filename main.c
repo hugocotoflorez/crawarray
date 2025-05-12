@@ -41,6 +41,7 @@ main(int argc, char *argv[])
         enum STATE {
                 NORMAL,
                 ON_STRING,
+                ON_STRING_NOPRINT,
         } state = NORMAL;
 
         int counter;
@@ -60,7 +61,7 @@ main(int argc, char *argv[])
                                         continue;
                                 }
 
-                                if (buffer[offset] == '\\') {
+                                else if (buffer[offset] == '\\') {
                                         if (state == NORMAL) {
                                                 counter += dprintf(fdout, "\"\\%c", buffer[offset]);
                                                 state = ON_STRING;
@@ -70,20 +71,56 @@ main(int argc, char *argv[])
                                         continue;
                                 }
 
-                                if (state == NORMAL) {
+                                else if (state == NORMAL) {
                                         counter += dprintf(fdout, "\"%c", buffer[offset]);
                                         state = ON_STRING;
-                                } else if (state == ON_STRING) {
+                                }
+
+                                else if (state == ON_STRING_NOPRINT) {
+                                        if (isxdigit(buffer[offset]))
+                                                counter += dprintf(fdout, "\"\"%c", buffer[offset]);
+                                        else
+                                                counter += dprintf(fdout, "%c", buffer[offset]);
+                                        state = ON_STRING;
+                                }
+
+                                else if (state == ON_STRING) {
                                         counter += dprintf(fdout, "%c", buffer[offset]);
                                 }
                         }
 
                         else {
-                                if (state == NORMAL) {
-                                        counter += dprintf(fdout, "\"\\x%02x", buffer[offset]);
-                                        state = ON_STRING;
-                                } else if (state == ON_STRING) {
-                                        counter += dprintf(fdout, "\\x%02x", buffer[offset]);
+                                static const char *NOPRINT_REPR[] = {
+                                        [0] = "\\0",
+                                        [7] = "\\a",
+                                        [8] = "\\b",
+                                        [9] = "\\t",
+                                        [10] = "\\n",
+                                        [11] = "\\v",
+                                        [12] = "\\f",
+                                        [13] = "\\r",
+                                };
+
+                                switch (buffer[offset]) {
+                                case 0:
+                                case 7 ... 13:
+                                        if (state == NORMAL) {
+                                                counter += dprintf(fdout, "\"%s", NOPRINT_REPR[buffer[offset]]);
+                                                state = ON_STRING_NOPRINT;
+                                        } else if (state == ON_STRING) {
+                                                counter += dprintf(fdout, "%s", NOPRINT_REPR[buffer[offset]]);
+                                                state = ON_STRING_NOPRINT;
+                                        }
+                                        break;
+                                default:
+                                        if (state == NORMAL) {
+                                                counter += dprintf(fdout, "\"\\x%02x", buffer[offset]);
+                                                state = ON_STRING_NOPRINT;
+                                        } else if (state == ON_STRING) {
+                                                counter += dprintf(fdout, "\\x%02x", buffer[offset]);
+                                                state = ON_STRING_NOPRINT;
+                                        }
+                                        break;
                                 }
                         }
 
@@ -101,7 +138,7 @@ main(int argc, char *argv[])
 
         if (state == NORMAL)
                 dprintf(fdout, "\n};\n");
-        else if (state == ON_STRING)
+        else if (state == ON_STRING || state == ON_STRING_NOPRINT)
                 dprintf(fdout, "\"\n};\n");
 
         close(fdin);
